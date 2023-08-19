@@ -329,6 +329,9 @@ const static __m256i ZERO = _mm256_setzero_si256();
 #define K12_chunkSize       8192
 #define K12_suffixLeaf      0x0B
 
+bool shouldSendTransaction = false;
+bool shouldSendTransactionTick = false;
+
 typedef struct
 {
     unsigned char state[200];
