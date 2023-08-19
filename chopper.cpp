@@ -20,7 +20,7 @@
 #define SIGNATURE_SIZE 64
 #define SPECTRUM_DEPTH 24
 #define STATUS_DISPLAY_DURATION 5000
-#define TICK_OFFSET 20
+#define TICK_OFFSET 10
 
 #define QUOTTERY_CONTRACT_INDEX 2
 
@@ -3459,7 +3459,7 @@ static DWORD WINAPI requestingThreadProc(LPVOID lpParameter)
                         lstrcat(statusMessage, number);
                         lstrcat(statusMessage, "]");
                         SetWindowText(hWnd, statusMessage);
-			shouldSendTransactionTick = true;
+                        shouldSendTransactionTick = true;
                     }
                     break;
 
@@ -3471,7 +3471,7 @@ static DWORD WINAPI requestingThreadProc(LPVOID lpParameter)
                             char numberText[32];
                             prettifyNumber(response->entity.incomingAmount - response->entity.outgoingAmount, numberText);
                             SetWindowText(hEnergy, numberText);
-			    		    if (response->entity.incomingAmount - response->entity.outgoingAmount > 1) {
+                            if (response->entity.incomingAmount - response->entity.outgoingAmount > 1) {
                                 shouldSendTransaction = true;
                             }
                         }
@@ -3793,7 +3793,7 @@ static LRESULT WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 ShowWindow(hTab1Amount, SW_HIDE);
                 ShowWindow(hTab1Bid, SW_HIDE);
 
-                switch(TabCtrl_GetCurSel(hTab))
+                switch (TabCtrl_GetCurSel(hTab))
                 {
                 case 0:
                 {
@@ -3926,11 +3926,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 
 
 
-	
+
         const WNDCLASS wndClass = { 0, WndProc, 0, 0, hInstance, LoadIcon(NULL, IDI_APPLICATION), LoadCursor(NULL, IDC_ARROW), (HBRUSH)COLOR_WINDOW, NULL, NAME };
         RegisterClass(&wndClass);
         hWnd = CreateWindow(NAME, NAME, WS_CAPTION | WS_MINIMIZEBOX | WS_SYSMENU, CW_USEDEFAULT, 0, 750, 500, NULL, NULL, hInstance, NULL);
-        
+
         INITCOMMONCONTROLSEX icc = { sizeof(INITCOMMONCONTROLSEX), ICC_BAR_CLASSES | ICC_LISTVIEW_CLASSES | ICC_STANDARD_CLASSES | ICC_TAB_CLASSES };
         InitCommonControlsEx(&icc);
         RECT rect;
@@ -3943,10 +3943,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         CreateWindow(WC_STATIC, "Energy (qus)", WS_CHILD | WS_VISIBLE | SS_CENTERIMAGE, 510, 10, 90, 20, hWnd, NULL, hInstance, NULL);
         hEnergy = CreateWindow(WC_EDIT, NULL, WS_BORDER | WS_CHILD | WS_VISIBLE | ES_READONLY | ES_RIGHT, 600, 10, (rect.right - rect.left - 10 - 600), 20, hWnd, NULL, hInstance, NULL);
         hStatus = CreateWindow(STATUSCLASSNAME, NULL, WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hWnd, NULL, hInstance, NULL);
-        
+
         RECT statusRect;
         GetWindowRect(hStatus, &statusRect);
-        
+
         hInfo1 = CreateWindow(WC_STATIC, "This app is a simple tool (hence the name) allowing to do basic operations in Qubic.", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE, rect.left + 10, rect.top + 50, rect.right - rect.left - 20, (rect.bottom - rect.top - (statusRect.bottom - statusRect.top) - 60) / 3, hWnd, NULL, hInstance, NULL);
         hInfo2 = CreateWindow(WC_STATIC, "The app must be used with a Qubic node that you trust.", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE, rect.left + 10, rect.top + 50 + (rect.bottom - rect.top - (statusRect.bottom - statusRect.top) - 60) / 3, rect.right - rect.left - 20, (rect.bottom - rect.top - (statusRect.bottom - statusRect.top) - 60) / 3, hWnd, NULL, hInstance, NULL);
         hInfo3 = CreateWindow(WC_STATIC, "Usage with other nodes may lead to loss of valuable assets!", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE, rect.left + 10, rect.top + 50 + ((rect.bottom - rect.top - (statusRect.bottom - statusRect.top) - 60) / 3) * 2, rect.right - rect.left - 20, (rect.bottom - rect.top - (statusRect.bottom - statusRect.top) - 60) / 3, hWnd, NULL, hInstance, NULL);
@@ -4016,11 +4016,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 
         bool sentTransaction = false;
         bool sentDoubleTest = false;
-	
+
         MSG msg;
         while (GetMessage(&msg, NULL, 0, 0))
         {
-	   if (sentDoubleTest) {
+            if (sentDoubleTest) {
                 PostQuitMessage(0);
             }
             if (sentTransaction) {
