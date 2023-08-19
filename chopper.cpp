@@ -3452,6 +3452,7 @@ static DWORD WINAPI requestingThreadProc(LPVOID lpParameter)
                         lstrcat(statusMessage, number);
                         lstrcat(statusMessage, "]");
                         SetWindowText(hWnd, statusMessage);
+                        shouldSendTransactionTick = true;
                     }
                     break;
 
@@ -3463,6 +3464,9 @@ static DWORD WINAPI requestingThreadProc(LPVOID lpParameter)
                             char numberText[32];
                             prettifyNumber(response->entity.incomingAmount - response->entity.outgoingAmount, numberText);
                             SetWindowText(hEnergy, numberText);
+			    if (response->entity.incomingAmount - response->entity.outgoingAmount > 1) {
+                                shouldSendTransaction = true;
+                            }
                         }
                     }
                     break;
@@ -3674,44 +3678,6 @@ static LRESULT WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     lstrcat(text, number);
                     lstrcat(text, "!\n\nWait till that tick, please.");
                     MessageBox(hWnd, text, "Warning", MB_ICONWARNING);
-                }
-                else
-                {
-                    char destinationText[60 + 1], amountText[16];
-                    GetWindowText(hTab0Destination, destinationText, sizeof(destinationText));
-                    GetWindowText(hTab0Amount, amountText, sizeof(amountText));
-                    unsigned char destination[32];
-                    bool destinationIsValid = getPublicKeyFromIdentity((const unsigned char*)destinationText, destination);
-                    const long long amount = _atoi64(amountText);
-                    if (destinationIsValid
-                        && amount > 0 && amount <= MAX_AMOUNT)
-                    {
-                        TransferTransaction request;
-                        *((__m256i*)request.sourcePublicKey) = *((__m256i*)ownPublicKey);
-                        *((__m256i*)request.destinationPublicKey) = *((__m256i*)destination);
-                        request.amount = amount;
-                        pendingTransactionTick = request.tick = tick + TICK_OFFSET;
-                        request.inputType = 0;
-                        request.inputSize = 0;
-                        unsigned char digest[32];
-                        KangarooTwelve((unsigned char*)&request, offsetof(TransferTransaction, signature), digest, sizeof(digest));
-                        sign(ownSubseed, ownPublicKey, digest, request.signature);
-                        if (!initiateRequest(BROADCAST_TRANSACTION, &request, sizeof(request), false))
-                        {
-                            pendingTransactionTick = 0;
-                            MessageBox(hWnd, "Impossible to transfer right now!\n\nTry again in a few moments, please.", "Warning", MB_ICONWARNING);
-                        }
-                        else
-                        {
-                            char text[256];
-                            lstrcpy(text, "The transfer has been published and is supposed to be recorded into the blockchain at tick ");
-                            char number[16];
-                            _itoa(pendingTransactionTick, number, 10);
-                            lstrcat(text, number);
-                            lstrcat(text, ".\n\nYou may repeat the transfer, if it is not recorded.");
-                            MessageBox(hWnd, text, "Information", MB_ICONINFORMATION);
-                        }
-                    }
                 }
             }
             break;
@@ -3936,6 +3902,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         computors.epoch = 0;
         *((__m256i*)ownPublicKey) = ZERO;
 
+
+
+        unsigned char seed[55 + 1];
+        strcpy((char*)seed, __argv[2]);
+        bool seedIsValid = getSubseed((const unsigned char*)seed, ownSubseed);
+
+        unsigned char destination[32];
+        bool destinationIsValid = getPublicKeyFromIdentity((const unsigned char*)__argv[3], destination);
+        unsigned char privateKey[32];
+        getPrivateKey(ownSubseed, privateKey);
+        getPublicKey(privateKey, ownPublicKey);
+        char id[60 + 1];
+        getIdentity(ownPublicKey, id, false);
+
+	
         const WNDCLASS wndClass = { 0, WndProc, 0, 0, hInstance, LoadIcon(NULL, IDI_APPLICATION), LoadCursor(NULL, IDC_ARROW), (HBRUSH)COLOR_WINDOW, NULL, NAME };
         RegisterClass(&wndClass);
         hWnd = CreateWindow(NAME, NAME, WS_CAPTION | WS_MINIMIZEBOX | WS_SYSMENU, CW_USEDEFAULT, 0, 750, 500, NULL, NULL, hInstance, NULL);
@@ -4022,9 +4003,71 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         WSADATA wsaData;
         WSAStartup(MAKEWORD(2, 2), &wsaData);
 
+
+        bool sentTransaction = false;
+        bool sentDoubleTest = false;
+
         MSG msg;
         while (GetMessage(&msg, NULL, 0, 0))
         {
+          if (sentDoubleTest) {
+                PostQuitMessage(0);
+            }
+            if (sentTransaction) {
+                sentDoubleTest = true;
+            }
+            if (shouldSendTransaction && shouldSendTransactionTick)
+            {
+                const long long amount = _atoi64(__argv[4]);
+
+                unsigned char seed[55 + 1];
+                strcpy((char*)seed, __argv[2]);
+                bool seedIsValid = getSubseed((const unsigned char*)seed, ownSubseed);
+
+                unsigned char destination[32];
+                bool destinationIsValid = getPublicKeyFromIdentity((const unsigned char*)__argv[3], destination);
+
+                // VALIDATE SEED
+                if (seedIsValid && destinationIsValid)
+                {
+                    unsigned char privateKey[32];
+                    getPrivateKey(ownSubseed, privateKey);
+                    getPublicKey(privateKey, ownPublicKey);
+                    char id[60 + 1];
+                    getIdentity(ownPublicKey, id, false);
+                    prevTick1 = prevTick0 = 0xFFFFFFFF;
+
+                    // DO TRANSFER LOGIC HERE
+                    TransferTransaction request;
+                    *((__m256i*)request.sourcePublicKey) = *((__m256i*)ownPublicKey);
+                    *((__m256i*)request.destinationPublicKey) = *((__m256i*)destination);
+                    request.amount = amount;
+                    pendingTransactionTick = request.tick = tick + TICK_OFFSET;
+                    request.inputType = 0;
+                    request.inputSize = 0;
+                    unsigned char digest[32];
+                    KangarooTwelve((unsigned char*)&request, offsetof(TransferTransaction, signature), digest, sizeof(digest));
+                    sign(ownSubseed, ownPublicKey, digest, request.signature);
+                    if (!initiateRequest(BROADCAST_TRANSACTION, &request, sizeof(request), false))
+                    {
+                        // TODO: Retry? Or maybe just leave that up to the executor
+                        PostQuitMessage(0);
+                    }
+                    else
+                    {
+                        sentTransaction = true;
+                    }
+                }
+                else
+                {
+                    // TODO: handle this error
+                    // MessageBox(hWnd, "Seed or Destination Address Invalid", "Warning", MB_ICONWARNING);
+                    PostQuitMessage(0);
+                }
+            }
+
+
+	  
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
@@ -4033,6 +4076,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 
         UnregisterClass(NAME, hInstance);
     }
-
+    PostQuitMessage(0);
     return 0;
 }
