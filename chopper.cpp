@@ -13,7 +13,7 @@
 #define ARBITRATOR "AFZPUAIYVPNUYGJRQVLUKOPPVLHAZQTGLYAAUUNBXFTVTAMSBKQBLEIEPCVJ"
 #define CONTRACT_IPO_BID 1
 #define MAX_AMOUNT 1000000000000000LL
-#define NAME "Chopper 71.0"
+#define NAME "Chopper 76.0"
 #define NUMBER_OF_COMPUTORS 676
 #define NUMBER_OF_EXCHANGED_PEERS 4
 #define PORT 21841
@@ -328,10 +328,6 @@ const static __m256i ZERO = _mm256_setzero_si256();
 #define K12_rateInBytes     ((1600 - K12_capacity) / 8)
 #define K12_chunkSize       8192
 #define K12_suffixLeaf      0x0B
-
-
-bool shouldSendTransaction = false;
-bool shouldSendTransactionTick = false;
 
 typedef struct
 {
@@ -3138,9 +3134,9 @@ struct RequestResponseHeader
 {
 private:
     unsigned char _size[3];
-    unsigned char _protocol;
-    unsigned char _dejavu[3];
     unsigned char _type;
+    unsigned char _dejavu[3];
+    unsigned char _deprecatedType;
 
 public:
     inline unsigned int size()
@@ -3153,16 +3149,6 @@ public:
         _size[0] = (unsigned char)size;
         _size[1] = (unsigned char)(size >> 8);
         _size[2] = (unsigned char)(size >> 16);
-    }
-
-    inline unsigned char protocol()
-    {
-        return _protocol;
-    }
-
-    inline void setProtocol()
-    {
-        _protocol = 0;
     }
 
     inline bool isDejavuZero()
@@ -3197,7 +3183,7 @@ public:
 
     inline void setType(const unsigned char type)
     {
-        _type = type;
+        _deprecatedType = _type = type;
     }
 };
 
@@ -3459,7 +3445,6 @@ static DWORD WINAPI requestingThreadProc(LPVOID lpParameter)
                         lstrcat(statusMessage, number);
                         lstrcat(statusMessage, "]");
                         SetWindowText(hWnd, statusMessage);
-                        shouldSendTransactionTick = true;
                     }
                     break;
 
@@ -3471,9 +3456,6 @@ static DWORD WINAPI requestingThreadProc(LPVOID lpParameter)
                             char numberText[32];
                             prettifyNumber(response->entity.incomingAmount - response->entity.outgoingAmount, numberText);
                             SetWindowText(hEnergy, numberText);
-                            if (response->entity.incomingAmount - response->entity.outgoingAmount > 1) {
-                                shouldSendTransaction = true;
-                            }
                         }
                     }
                     break;
@@ -3559,7 +3541,6 @@ static bool initiateRequest(unsigned char requestType, void* request, unsigned s
 
         RequestResponseHeader* requestHeader = (RequestResponseHeader*)&requestResponseBuffer[0];
         requestHeader->setSize(sizeof(RequestResponseHeader) + requestSize);
-        requestHeader->setProtocol();
         if (randomizeDejavu)
         {
             requestHeader->randomizeDejavu();
@@ -3686,6 +3667,44 @@ static LRESULT WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     lstrcat(text, "!\n\nWait till that tick, please.");
                     MessageBox(hWnd, text, "Warning", MB_ICONWARNING);
                 }
+                else
+                {
+                    char destinationText[60 + 1], amountText[16];
+                    GetWindowText(hTab0Destination, destinationText, sizeof(destinationText));
+                    GetWindowText(hTab0Amount, amountText, sizeof(amountText));
+                    unsigned char destination[32];
+                    bool destinationIsValid = getPublicKeyFromIdentity((const unsigned char*)destinationText, destination);
+                    const long long amount = _atoi64(amountText);
+                    if (destinationIsValid
+                        && amount > 0 && amount <= MAX_AMOUNT)
+                    {
+                        TransferTransaction request;
+                        *((__m256i*)request.sourcePublicKey) = *((__m256i*)ownPublicKey);
+                        *((__m256i*)request.destinationPublicKey) = *((__m256i*)destination);
+                        request.amount = amount;
+                        pendingTransactionTick = request.tick = tick + TICK_OFFSET;
+                        request.inputType = 0;
+                        request.inputSize = 0;
+                        unsigned char digest[32];
+                        KangarooTwelve((unsigned char*)&request, offsetof(TransferTransaction, signature), digest, sizeof(digest));
+                        sign(ownSubseed, ownPublicKey, digest, request.signature);
+                        if (!initiateRequest(BROADCAST_TRANSACTION, &request, sizeof(request), false))
+                        {
+                            pendingTransactionTick = 0;
+                            MessageBox(hWnd, "Impossible to transfer right now!\n\nTry again in a few moments, please.", "Warning", MB_ICONWARNING);
+                        }
+                        else
+                        {
+                            char text[256];
+                            lstrcpy(text, "The transfer has been published and is supposed to be recorded into the blockchain at tick ");
+                            char number[16];
+                            _itoa(pendingTransactionTick, number, 10);
+                            lstrcat(text, number);
+                            lstrcat(text, ".\n\nYou may repeat the transfer, if it is not recorded.");
+                            MessageBox(hWnd, text, "Information", MB_ICONINFORMATION);
+                        }
+                    }
+                }
             }
             break;
             }
@@ -3793,7 +3812,7 @@ static LRESULT WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 ShowWindow(hTab1Amount, SW_HIDE);
                 ShowWindow(hTab1Bid, SW_HIDE);
 
-                switch (TabCtrl_GetCurSel(hTab))
+                switch(TabCtrl_GetCurSel(hTab))
                 {
                 case 0:
                 {
@@ -3909,28 +3928,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         computors.epoch = 0;
         *((__m256i*)ownPublicKey) = ZERO;
 
-
-
-
-        unsigned char seed[55 + 1];
-        strcpy((char*)seed, __argv[2]);
-        bool seedIsValid = getSubseed((const unsigned char*)seed, ownSubseed);
-
-        unsigned char destination[32];
-        bool destinationIsValid = getPublicKeyFromIdentity((const unsigned char*)__argv[3], destination);
-        unsigned char privateKey[32];
-        getPrivateKey(ownSubseed, privateKey);
-        getPublicKey(privateKey, ownPublicKey);
-        char id[60 + 1];
-        getIdentity(ownPublicKey, id, false);
-
-
-
-
         const WNDCLASS wndClass = { 0, WndProc, 0, 0, hInstance, LoadIcon(NULL, IDI_APPLICATION), LoadCursor(NULL, IDC_ARROW), (HBRUSH)COLOR_WINDOW, NULL, NAME };
         RegisterClass(&wndClass);
         hWnd = CreateWindow(NAME, NAME, WS_CAPTION | WS_MINIMIZEBOX | WS_SYSMENU, CW_USEDEFAULT, 0, 750, 500, NULL, NULL, hInstance, NULL);
-
+        
         INITCOMMONCONTROLSEX icc = { sizeof(INITCOMMONCONTROLSEX), ICC_BAR_CLASSES | ICC_LISTVIEW_CLASSES | ICC_STANDARD_CLASSES | ICC_TAB_CLASSES };
         InitCommonControlsEx(&icc);
         RECT rect;
@@ -3943,10 +3944,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         CreateWindow(WC_STATIC, "Energy (qus)", WS_CHILD | WS_VISIBLE | SS_CENTERIMAGE, 510, 10, 90, 20, hWnd, NULL, hInstance, NULL);
         hEnergy = CreateWindow(WC_EDIT, NULL, WS_BORDER | WS_CHILD | WS_VISIBLE | ES_READONLY | ES_RIGHT, 600, 10, (rect.right - rect.left - 10 - 600), 20, hWnd, NULL, hInstance, NULL);
         hStatus = CreateWindow(STATUSCLASSNAME, NULL, WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hWnd, NULL, hInstance, NULL);
-
+        
         RECT statusRect;
         GetWindowRect(hStatus, &statusRect);
-
+        
         hInfo1 = CreateWindow(WC_STATIC, "This app is a simple tool (hence the name) allowing to do basic operations in Qubic.", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE, rect.left + 10, rect.top + 50, rect.right - rect.left - 20, (rect.bottom - rect.top - (statusRect.bottom - statusRect.top) - 60) / 3, hWnd, NULL, hInstance, NULL);
         hInfo2 = CreateWindow(WC_STATIC, "The app must be used with a Qubic node that you trust.", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE, rect.left + 10, rect.top + 50 + (rect.bottom - rect.top - (statusRect.bottom - statusRect.top) - 60) / 3, rect.right - rect.left - 20, (rect.bottom - rect.top - (statusRect.bottom - statusRect.top) - 60) / 3, hWnd, NULL, hInstance, NULL);
         hInfo3 = CreateWindow(WC_STATIC, "Usage with other nodes may lead to loss of valuable assets!", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE, rect.left + 10, rect.top + 50 + ((rect.bottom - rect.top - (statusRect.bottom - statusRect.top) - 60) / 3) * 2, rect.right - rect.left - 20, (rect.bottom - rect.top - (statusRect.bottom - statusRect.top) - 60) / 3, hWnd, NULL, hInstance, NULL);
@@ -4013,70 +4014,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         WSADATA wsaData;
         WSAStartup(MAKEWORD(2, 2), &wsaData);
 
-
-        bool sentTransaction = false;
-        bool sentDoubleTest = false;
-
         MSG msg;
         while (GetMessage(&msg, NULL, 0, 0))
         {
-            if (sentDoubleTest) {
-                PostQuitMessage(0);
-            }
-            if (sentTransaction) {
-                sentDoubleTest = true;
-            }
-            if (shouldSendTransaction && shouldSendTransactionTick)
-            {
-                const long long amount = _atoi64(__argv[4]);
-
-                unsigned char seed[55 + 1];
-                strcpy((char*)seed, __argv[2]);
-                bool seedIsValid = getSubseed((const unsigned char*)seed, ownSubseed);
-
-                unsigned char destination[32];
-                bool destinationIsValid = getPublicKeyFromIdentity((const unsigned char*)__argv[3], destination);
-
-                // VALIDATE SEED
-                if (seedIsValid && destinationIsValid)
-                {
-                    unsigned char privateKey[32];
-                    getPrivateKey(ownSubseed, privateKey);
-                    getPublicKey(privateKey, ownPublicKey);
-                    char id[60 + 1];
-                    getIdentity(ownPublicKey, id, false);
-                    prevTick1 = prevTick0 = 0xFFFFFFFF;
-
-                    // DO TRANSFER LOGIC HERE
-                    TransferTransaction request;
-                    *((__m256i*)request.sourcePublicKey) = *((__m256i*)ownPublicKey);
-                    *((__m256i*)request.destinationPublicKey) = *((__m256i*)destination);
-                    request.amount = amount;
-                    pendingTransactionTick = request.tick = tick + TICK_OFFSET;
-                    request.inputType = 0;
-                    request.inputSize = 0;
-                    unsigned char digest[32];
-                    KangarooTwelve((unsigned char*)&request, offsetof(TransferTransaction, signature), digest, sizeof(digest));
-                    sign(ownSubseed, ownPublicKey, digest, request.signature);
-                    if (!initiateRequest(BROADCAST_TRANSACTION, &request, sizeof(request), false))
-                    {
-                        // TODO: Retry? Or maybe just leave that up to the executor
-                        PostQuitMessage(0);
-                    }
-                    else
-                    {
-                        sentTransaction = true;
-                    }
-                }
-                else
-                {
-                    // TODO: handle this error
-                    // MessageBox(hWnd, "Seed or Destination Address Invalid", "Warning", MB_ICONWARNING);
-                    PostQuitMessage(0);
-                }
-            }
-
-
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
@@ -4085,6 +4025,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 
         UnregisterClass(NAME, hInstance);
     }
-    PostQuitMessage(0);
+
     return 0;
 }
